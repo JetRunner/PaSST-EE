@@ -341,7 +341,7 @@ class PaSST(nn.Module):
                  in_chans=1, num_classes=527, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
-                 act_layer=None, weight_init=''):
+                 act_layer=None, weight_init='', confidence_threshold=1.):
         """
         Args:
             u_patchout: Unstructured Patchout integer, number of items to be removed from the final sequence
@@ -366,6 +366,9 @@ class PaSST(nn.Module):
             weight_init: (str): weight init scheme
         """
         super().__init__()
+
+        self.confidence_threshold = confidence_threshold
+
         self.num_classes = num_classes
         self.u_patchout = u_patchout
         self.s_patchout_t = s_patchout_t
@@ -409,11 +412,10 @@ class PaSST(nn.Module):
             self.pre_logits = nn.Identity()
 
         # Classifier head(s)
-        self.head = nn.Sequential(nn.LayerNorm(self.num_features),
-                                  nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())
-        self.head_dist = None
-        if distilled:
-            self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
+        self.heads = nn.ModuleList([nn.Sequential(nn.LayerNorm(self.num_features), nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())] for _ in range(depth))
+
+        # self.head = nn.Sequential(nn.LayerNorm(self.num_features),
+        #                           nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())
 
         self.init_weights(weight_init)
 
@@ -441,18 +443,21 @@ class PaSST(nn.Module):
         return {'new_pos_embed', 'freq_new_pos_embed', 'time_new_pos_embed', 'cls_token', 'dist_token'}
 
     def get_classifier(self):
-        if self.dist_token is None:
-            return self.head
-        else:
-            return self.head, self.head_dist
+        return self.heads[-1]
+        # if self.dist_token is None:
+        #     return self.head
+        # else:
+        #     return self.head, self.head_dist
 
     def reset_classifier(self, num_classes, global_pool=''):
         self.num_classes = num_classes
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
-        if self.num_tokens == 2:
-            self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
+        self.heads = nn.ModuleList([nn.Sequential(nn.LayerNorm(self.num_features), nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())] for _ in range(depth))
+        # self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        # if self.num_tokens == 2:
+        #     self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
 
     def forward_features(self, x):
+        hidden_states = []
         global first_RUN  # not jit friendly? use trace instead
         x = self.patch_embed(x)  # [b, e, f, t]
         B_dim, E_dim, F_dim, T_dim = x.shape  # slow
@@ -504,34 +509,53 @@ class PaSST(nn.Module):
 
         if first_RUN: print(" final sequence x", x.shape)
         x = self.pos_drop(x)
-        x = self.blocks(x)
+        for layer in self.blocks:
+            x = layer(x)
+            x_inter = x
+            x_inter = self.norm(x_inter)
+            x_inter = self.pre_logits(x_inter[:, 0])
+            hidden_states.append(x_inter)
+        # x = self.blocks(x)
         if first_RUN: print(f" after {len(self.blocks)} atten blocks x", x.shape)
-        x = self.norm(x)
-        if self.dist_token is None:
-            return self.pre_logits(x[:, 0])
-        else:
-            return x[:, 0], x[:, 1]
+        # x = self.norm(x)
+        
+        # if self.dist_token is None:
+        #     return self.pre_logits(x[:, 0])
+        # else:
+        #     return x[:, 0], x[:, 1]
+        return x_inter, hidden_states
 
     def forward(self, x):
         global first_RUN
         if first_RUN: print("x", x.size())
 
-        x = self.forward_features(x)
+        _, features = self.forward_features(x)
+        ic_outputs = []
 
-        if self.head_dist is not None:
-            features = (x[0] + x[1]) / 2
-            if first_RUN: print("forward_features", features.size())
-            x = self.head(features)
-            if first_RUN: print("head", x.size())
-            first_RUN = False
-            return x, features
-        else:
-            features = x
-            if first_RUN: print("forward_features", features.size())
-            x = self.head(x)
+        # if self.head_dist is not None:
+        #     features = (x[0] + x[1]) / 2
+        #     if first_RUN: print("forward_features", features.size())
+        #     x = self.head(features)
+        #     if first_RUN: print("head", x.size())
+        #     first_RUN = False
+        #     return x, features
+        # else:
+        #     features = x
+        #     if first_RUN: print("forward_features", features.size())
+        #     x = self.head(x)
+
+        for head, feature in zip(self.heads, features):
+            x = head(feature)
+            ic_outputs.append(x)
+            if not self.training:  # When inference
+                assert x.shape[0] == 1, "The batch size has to be 1 for inference."
+                max_x_softmax_score = F.softmax(x, dim=-1).squeeze(dim=0).max(dim=0)
+                if max_x_softmax_score > self.confidence_threshold:
+                    break
+
         if first_RUN: print("head", x.size())
         first_RUN = False
-        return x, features
+        return x, features, ic_outputs
 
 
 def _init_vit_weights(module: nn.Module, name: str = '', head_bias: float = 0., jax_impl: bool = False):
