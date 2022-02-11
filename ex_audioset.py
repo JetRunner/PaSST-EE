@@ -129,6 +129,39 @@ class M(Ba3lModule):
             x = (x - self.tr_m) / self.tr_std
         return x
 
+    def get_head_weight(idx):
+        return 1/(idx+1)
+
+    def default_loss(self, y, y_hat, rn_indices, lam):
+        batch_size = len(y)
+        if self.use_mixup:
+            y_mix = y * lam.reshape(batch_size, 1) + y[rn_indices] * (1. - lam.reshape(batch_size, 1))
+            samples_loss = F.binary_cross_entropy_with_logits(
+                y_hat, y_mix, reduction="none")
+            loss = samples_loss.mean()
+            samples_loss = samples_loss.detach()
+        else:
+            samples_loss = F.binary_cross_entropy_with_logits(y_hat, y, reduction="none")
+            loss = samples_loss.mean()
+            samples_loss = samples_loss.detach()
+        return loss, samples_loss
+
+    def early_exit_loss(self, y, ic_outputs, rn_indices, lam):
+        acc_loss = 0
+        all_samples_loss = []
+        for i, ic_output in enumerate(ic_outputs):
+            ic_loss, ic_samples_loss = self.default_loss(y, ic_output, rn_indices, lam)
+            weight = self.get_head_weight(i)
+            all_samples_loss.append({
+                "idx": i,
+                "weight": weight,
+                "samples_loss": ic_samples_loss
+            }) 
+            acc_loss = acc_loss + weight * ic_loss
+        return acc_loss, all_samples_loss 
+        
+
+
     def training_step(self, batch, batch_idx):
         # REQUIRED
         x, f, y = batch
@@ -144,18 +177,11 @@ class M(Ba3lModule):
             lam = lam.to(x.device)
             x = x * lam.reshape(batch_size, 1, 1, 1) + x[rn_indices] * (1. - lam.reshape(batch_size, 1, 1, 1))
 
-        y_hat, embed = self.forward(x)
+        y_hat, embed, ic_outputs = self.forward(x)
 
-        if self.use_mixup:
-            y_mix = y * lam.reshape(batch_size, 1) + y[rn_indices] * (1. - lam.reshape(batch_size, 1))
-            samples_loss = F.binary_cross_entropy_with_logits(
-                y_hat, y_mix, reduction="none")
-            loss = samples_loss.mean()
-            samples_loss = samples_loss.detach()
-        else:
-            samples_loss = F.binary_cross_entropy_with_logits(y_hat, y, reduction="none")
-            loss = samples_loss.mean()
-            samples_loss = samples_loss.detach()
+        
+
+        loss, _ = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
 
         results = {"loss": loss, }
 
