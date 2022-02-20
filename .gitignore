@@ -1,4 +1,8 @@
-
+# data
+audioset_hdf5s/
+mp3_audio/
+audioset_hdf5s
+mp3_audio
 
 # project
 /output/

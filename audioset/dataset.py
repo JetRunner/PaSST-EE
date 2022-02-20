@@ -159,7 +159,7 @@ class AudioSetDataset(TorchDataset):
         self.classes_num = classes_num
         self.augment = augment
         if augment:
-            print(f"Will agument data from {hdf5_file}")
+            print(f"Will augment data from {hdf5_file}")
 
     def open_hdf5(self):
         self.dataset_file = h5py.File(self.hdf5_file, 'r')
@@ -189,7 +189,13 @@ class AudioSetDataset(TorchDataset):
             self.open_hdf5()
 
         audio_name = self.dataset_file['audio_name'][index].decode()
-        waveform = decode_mp3(self.dataset_file['mp3'][index])
+        try:
+            waveform = decode_mp3(self.dataset_file['mp3'][index])
+        except:
+            print(audio_name, index, self.dataset_file, self.hdf5_file)
+            print(type(self.dataset_file['mp3'][index]))
+            print(self.dataset_file['mp3'][index].shape)
+            input()
         if self.augment:
             waveform = pydub_augment(waveform)
         waveform = pad_or_truncate(waveform, self.clip_length)
@@ -292,7 +298,7 @@ def get_ft_cls_balanced_sample_weights(balanced_train_hdf5, unbalanced_train_hdf
 
 @dataset.command
 def get_ft_weighted_sampler(samples_weights=CMD(".get_ft_cls_balanced_sample_weights"),
-                            epoch_len=100000, sampler_replace=False):
+                            epoch_len=100000, sampler_replace=False): 
     num_nodes = int(os.environ.get('num_nodes', 1))
     ddp = int(os.environ.get('DDP', 1))
     num_nodes = max(ddp, num_nodes)

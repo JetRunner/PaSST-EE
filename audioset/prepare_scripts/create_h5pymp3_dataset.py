@@ -7,10 +7,10 @@ import os
 
 
 # %%
-base_dir = "../../audioset_hdf5s/"
+base_dir = "audioset_hdf5s/"
 balanced_csv= base_dir+ "metadata/balanced_train_segments.csv"
 eval_csv= base_dir+ "metadata/eval_segments.csv"
-mp3_path = "../../mp3_audio/"
+mp3_path = "mp3_audio/"
 
 
 # %%
@@ -84,14 +84,14 @@ def check_available(balanced_csv,balanced_audio_path,prefix=None):
     for n in range(audios_num):
         audio_path =  meta_csv['audio_name'][n]
         #print(balanced_audio_path + f"{prefix}/{audio_path}")
-        if os.path.isfile(balanced_audio_path + f"{prefix}/{audio_path}" ):
+        if os.path.isfile(balanced_audio_path + f"{prefix}/{audio_path}"):
             found+=1
             available_files.append(meta_csv['audio_name'][n])
             available_targets.append(meta_csv['target'][n])
         else:
             notfound+=1
     print(f"Found {found} . not found {notfound}")
-    return available_files,available_targets
+    return available_files, available_targets
 # %%
 
 # %%

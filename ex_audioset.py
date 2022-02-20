@@ -129,7 +129,7 @@ class M(Ba3lModule):
             x = (x - self.tr_m) / self.tr_std
         return x
 
-    def get_head_weight(idx):
+    def get_head_weight(self, idx):
         return 1/(idx+1)
 
     def default_loss(self, y, y_hat, rn_indices, lam):
@@ -160,8 +160,6 @@ class M(Ba3lModule):
             acc_loss = acc_loss + weight * ic_loss
         return acc_loss, all_samples_loss 
         
-
-
     def training_step(self, batch, batch_idx):
         # REQUIRED
         x, f, y = batch
@@ -212,7 +210,7 @@ class M(Ba3lModule):
         if self.do_swa:
             model_name = model_name + [("swa_", self.net_swa)]
         for net_name, net in model_name:
-            y_hat, _ = net(x)
+            y_hat, _, _ = net(x)
             samples_loss = F.binary_cross_entropy_with_logits(y_hat, y)
             loss = samples_loss.mean()
             out = torch.sigmoid(y_hat.detach())

@@ -412,7 +412,7 @@ class PaSST(nn.Module):
             self.pre_logits = nn.Identity()
 
         # Classifier head(s)
-        self.heads = nn.ModuleList([nn.Sequential(nn.LayerNorm(self.num_features), nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())] for _ in range(depth))
+        self.heads = nn.ModuleList([nn.Sequential(nn.LayerNorm(self.num_features), nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()) for _ in range(depth)])
 
         # self.head = nn.Sequential(nn.LayerNorm(self.num_features),
         #                           nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())
@@ -547,11 +547,11 @@ class PaSST(nn.Module):
         for head, feature in zip(self.heads, features):
             x = head(feature)
             ic_outputs.append(x)
-            if not self.training:  # When inference
-                assert x.shape[0] == 1, "The batch size has to be 1 for inference."
-                max_x_softmax_score = F.softmax(x, dim=-1).squeeze(dim=0).max(dim=0)
-                if max_x_softmax_score > self.confidence_threshold:
-                    break
+            # if not self.training:  # When inference
+            #     assert x.shape[0] == 1, "The batch size has to be 1 for inference."
+            #     max_x_softmax_score = F.softmax(x, dim=-1).squeeze(dim=0).max(dim=0)
+            #     if max_x_softmax_score > self.confidence_threshold:
+            #         break
 
         if first_RUN: print("head", x.size())
         first_RUN = False
