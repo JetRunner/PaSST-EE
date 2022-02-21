@@ -175,6 +175,8 @@ with h5py.File(base_dir+ "mp3/" + save_file+"_mp3.hdf", 'w') as hf:
             print(f"{i}/{available_size}")
         f = file[:-3] + "mp3"
         a = np.fromfile(mp3_path + prefix  + f, dtype='uint8')
+        if a.shape[0] < 10000:
+            continue
         audio_name[i]=f
         waveform[i] = a
         target[i] = y[i]
