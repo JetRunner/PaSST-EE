@@ -130,7 +130,7 @@ class M(Ba3lModule):
         return x
 
     def get_head_weight(self, idx):
-        return 1/(idx+1)
+        return 1. / (idx+1)
 
     def default_loss(self, y, y_hat, rn_indices, lam):
         batch_size = len(y)
