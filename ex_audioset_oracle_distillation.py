@@ -160,7 +160,7 @@ class M(Ba3lModule):
         ic_losses, min_loss_idx = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
         acc_loss: torch.FloatTensor = 0
         for ic_output, ic_loss in zip(ic_outputs, ic_losses):
-            acc_loss += self.distillation_alpha * F.kl_div(ic_output, ic_outputs[min_loss_idx]) + \
+            acc_loss += self.distillation_alpha * F.kl_div(ic_output, ic_outputs[min_loss_idx].detach()) + \
                         (1 - self.distillation_alpha) * ic_loss
         return acc_loss, acc_loss.detach()
         
