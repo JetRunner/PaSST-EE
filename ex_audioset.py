@@ -177,8 +177,6 @@ class M(Ba3lModule):
 
         y_hat, embed, ic_outputs = self.forward(x)
 
-        
-
         loss, _ = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
 
         results = {"loss": loss, }
