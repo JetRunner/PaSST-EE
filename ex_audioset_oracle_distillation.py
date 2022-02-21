@@ -1,3 +1,4 @@
+import imp
 import os
 import sys
 
@@ -62,6 +63,7 @@ def default_conf():
     lr = 0.00002 # learning rate
     use_mixup = True
     mixup_alpha = 0.3
+    distillation_alpha = 0.9
 
 
 # register extra possible configs
@@ -182,6 +184,7 @@ class M(Ba3lModule):
         y_hat, embed, ic_outputs = self.forward(x)
 
         loss, _ = self.oracle_distillation_loss(y, ic_outputs, rn_indices, lam)
+        loss = loss.mean()
 
         results = {"loss": loss, }
 
