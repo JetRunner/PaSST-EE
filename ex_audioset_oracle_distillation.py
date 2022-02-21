@@ -39,7 +39,7 @@ get_validate_loader = ex.datasets.test.iter(DataLoader, static_args=dict(worker_
 
 @ex.config
 def default_conf():
-    cmd = " ".join(sys.argv) # command line arguments
+    cmd = " ".join(sys.argv)  # command line arguments
     saque_cmd = os.environ.get("SAQUE_CMD", "").strip()
     saque_id = os.environ.get("SAQUE_ID", "").strip()
     slurm_job_id = os.environ.get("SLURM_JOB_ID", "").strip()
@@ -49,7 +49,7 @@ def default_conf():
     process_id = os.getpid()
     models = {
         "net": DynamicIngredient("models.passt.model_ing", arch="passt_deit_bd_p16_384", n_classes=527, s_patchout_t=40,
-                                 s_patchout_f=4), # network config
+                                 s_patchout_f=4),  # network config
         "mel": DynamicIngredient("models.preprocess.model_ing",
                                  instance_cmd="AugmentMelSTFT",
                                  n_mels=128, sr=32000, win_length=800, hopsize=320, n_fft=1024, freqm=48,
@@ -60,7 +60,7 @@ def default_conf():
     basedataset = DynamicIngredient("audioset.dataset.dataset", wavmix=1)
     trainer = dict(max_epochs=130, gpus=1, weights_summary='full', benchmark=True, num_sanity_val_steps=0,
                    reload_dataloaders_every_epoch=True)
-    lr = 0.00002 # learning rate
+    lr = 0.00002  # learning rate
     use_mixup = True
     mixup_alpha = 0.3
     distillation_alpha = 0.9
@@ -160,12 +160,18 @@ class M(Ba3lModule):
 
     def oracle_distillation_loss(self, y, ic_outputs, rn_indices, lam):
         ic_losses, min_loss_idx = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
-        acc_loss: torch.FloatTensor = 0
+        acc_loss = None
         for ic_output, ic_loss in zip(ic_outputs, ic_losses):
-            acc_loss += self.distillation_alpha * F.kl_div(ic_output, ic_outputs[min_loss_idx].detach()) + \
-                        (1 - self.distillation_alpha) * ic_loss
+            ic_complex_loss = self.distillation_alpha * \
+                              F.kl_div(F.log_softmax(ic_output, dim=1),
+                                       F.softmax(ic_outputs[min_loss_idx].detach(), dim=1)) + \
+                              (1 - self.distillation_alpha) * ic_loss
+            if acc_loss is None:
+                acc_loss = ic_complex_loss
+            else:
+                acc_loss += ic_complex_loss
         return acc_loss, acc_loss.detach()
-        
+
     def training_step(self, batch, batch_idx):
         # REQUIRED
         x, f, y = batch
@@ -184,7 +190,7 @@ class M(Ba3lModule):
         y_hat, embed, ic_outputs = self.forward(x)
 
         loss, _ = self.oracle_distillation_loss(y, ic_outputs, rn_indices, lam)
-        loss = loss.mean()
+        # loss = loss.mean()
 
         results = {"loss": loss, }
 
