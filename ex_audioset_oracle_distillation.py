@@ -99,6 +99,7 @@ class M(Ba3lModule):
         self.da_net = None
         super(M, self).__init__(experiment)
 
+        self.distillation_alpha = self.config.distillation_alpha
         self.use_mixup = self.config.use_mixup or False
         self.mixup_alpha = self.config.mixup_alpha
 
@@ -144,16 +145,24 @@ class M(Ba3lModule):
         return loss, samples_loss
 
     def early_exit_loss(self, y, ic_outputs, rn_indices, lam):
-        acc_loss = 0
         all_samples_loss = []
+        min_loss = 99999
+        min_loss_idx = None
         for i, ic_output in enumerate(ic_outputs):
             ic_loss, ic_samples_loss = self.default_loss(y, ic_output, rn_indices, lam)
-            all_samples_loss.append({
-                "idx": i,
-                "samples_loss": ic_samples_loss
-            }) 
-            acc_loss = acc_loss + ic_loss
-        return acc_loss, all_samples_loss 
+            if ic_loss < min_loss:
+                min_loss = ic_loss
+                min_loss_idx = i
+            all_samples_loss.append(ic_samples_loss)
+        return all_samples_loss, min_loss_idx
+
+    def oracle_distillation_loss(self, y, ic_outputs, rn_indices, lam):
+        ic_losses, min_loss_idx = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
+        acc_loss: torch.FloatTensor = 0
+        for ic_output, ic_loss in zip(ic_outputs, ic_losses):
+            acc_loss += self.distillation_alpha * F.kl_div(ic_output, ic_outputs[min_loss_idx].detach()) + \
+                        (1 - self.distillation_alpha) * ic_loss
+        return acc_loss, acc_loss.detach()
         
     def training_step(self, batch, batch_idx):
         # REQUIRED
@@ -172,7 +181,7 @@ class M(Ba3lModule):
 
         y_hat, embed, ic_outputs = self.forward(x)
 
-        loss, _ = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
+        loss, _ = self.oracle_distillation_loss(y, ic_outputs, rn_indices, lam)
 
         results = {"loss": loss, }
 
