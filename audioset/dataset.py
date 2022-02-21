@@ -195,7 +195,6 @@ class AudioSetDataset(TorchDataset):
             print(audio_name, index, self.dataset_file, self.hdf5_file)
             print(type(self.dataset_file['mp3'][index]))
             print(self.dataset_file['mp3'][index].shape)
-            input()
         if self.augment:
             waveform = pydub_augment(waveform)
         waveform = pad_or_truncate(waveform, self.clip_length)
