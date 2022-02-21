@@ -129,9 +129,6 @@ class M(Ba3lModule):
             x = (x - self.tr_m) / self.tr_std
         return x
 
-    def get_head_weight(self, idx):
-        return 1. / (idx + 1)
-
     def default_loss(self, y, y_hat, rn_indices, lam):
         batch_size = len(y)
         if self.use_mixup:
@@ -151,13 +148,11 @@ class M(Ba3lModule):
         all_samples_loss = []
         for i, ic_output in enumerate(ic_outputs):
             ic_loss, ic_samples_loss = self.default_loss(y, ic_output, rn_indices, lam)
-            weight = self.get_head_weight(i)
             all_samples_loss.append({
                 "idx": i,
-                "weight": weight,
                 "samples_loss": ic_samples_loss
             }) 
-            acc_loss = acc_loss + weight * ic_loss
+            acc_loss = acc_loss + ic_loss
         return acc_loss, all_samples_loss 
         
     def training_step(self, batch, batch_idx):
