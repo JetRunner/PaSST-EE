@@ -1,4 +1,3 @@
-import imp
 import os
 import sys
 
@@ -147,7 +146,7 @@ class M(Ba3lModule):
         return loss, samples_loss
 
     def early_exit_loss(self, y, ic_outputs, rn_indices, lam):
-        all_samples_loss = []
+        ic_losses = []
         min_loss = 99999
         min_loss_idx = None
         for i, ic_output in enumerate(ic_outputs):
@@ -155,8 +154,8 @@ class M(Ba3lModule):
             if ic_loss < min_loss:
                 min_loss = ic_loss
                 min_loss_idx = i
-            all_samples_loss.append(ic_samples_loss)
-        return all_samples_loss, min_loss_idx
+            ic_losses.append(ic_loss)
+        return ic_losses, min_loss_idx
 
     def oracle_distillation_loss(self, y, ic_outputs, rn_indices, lam):
         ic_losses, min_loss_idx = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
