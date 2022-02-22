@@ -164,8 +164,7 @@ class M(Ba3lModule):
         for ic_output, ic_loss in zip(ic_outputs, ic_losses):
             ic_complex_loss = self.distillation_alpha * \
                               F.kl_div(F.log_softmax(ic_output, dim=1),
-                                       F.softmax(ic_outputs[min_loss_idx].detach(), dim=1), size_average=False) / \
-                              ic_output.shape[0] + \
+                                       F.softmax(ic_outputs[min_loss_idx].detach(), dim=1), reduction='batchmean') + \
                               (1 - self.distillation_alpha) * ic_loss
             if acc_loss is None:
                 acc_loss = ic_complex_loss
