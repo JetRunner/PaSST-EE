@@ -341,7 +341,7 @@ class PaSST(nn.Module):
                  in_chans=1, num_classes=527, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
-                 act_layer=None, weight_init='', confidence_threshold=1.):
+                 act_layer=None, weight_init='', diff_threshold=1., patience=12):
         """
         Args:
             u_patchout: Unstructured Patchout integer, number of items to be removed from the final sequence
@@ -367,7 +367,13 @@ class PaSST(nn.Module):
         """
         super().__init__()
 
-        self.confidence_threshold = confidence_threshold
+        self.diff_threshold = diff_threshold
+        self.patience = patience
+        self.exit_counter = 0
+        self.last_softmax = None
+        self.stats_exit_layer = 0
+        self.stats_counter = 0
+        self.is_early_exit_mode = False
 
         self.num_classes = num_classes
         self.u_patchout = u_patchout
@@ -418,6 +424,12 @@ class PaSST(nn.Module):
         #                           nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())
 
         self.init_weights(weight_init)
+
+    def get_stats(self):
+        return {
+            "total_instances": self.stats_counter,
+            "acceleration_ratio": self.stats_exit_layer / self.stats_counter,
+        }
 
     def init_weights(self, mode=''):
         assert mode in ('jax', 'jax_nlhb', 'nlhb', '')
@@ -544,16 +556,34 @@ class PaSST(nn.Module):
         #     if first_RUN: print("forward_features", features.size())
         #     x = self.head(x)
 
-        for head, feature in zip(self.heads, features):
+        self.last_softmax = None
+        self.stats_counter += 1
+        is_early_exited = False
+        for layer_idx, (head, feature) in enumerate(zip(self.heads, features)):
             x = head(feature)
             ic_outputs.append(x)
-            # if not self.training:  # When inference
-            #     assert x.shape[0] == 1, "The batch size has to be 1 for inference."
-            #     max_x_softmax_score = F.softmax(x, dim=-1).squeeze(dim=0).max(dim=0)
-            #     if max_x_softmax_score > self.confidence_threshold:
-            #         break
-
-        if first_RUN: print("head", x.size())
+            if not self.training and self.is_early_exit_mode:  # When inference with early exit
+                softmax_score = F.softmax(feature, dim=-1)
+                if self.last_softmax is None:
+                    assert x.shape[0] == 1, "The batch size has to be 1 for early exit."  # Only check once
+                    self.last_softmax = softmax_score
+                    continue
+                diff: torch.FloatTensor = softmax_score - self.last_softmax
+                diff_abs = diff.flatten().abs()
+                diff_abs_sum = diff_abs.sum()
+                if diff_abs_sum < self.diff_threshold:  # Consistent
+                    self.exit_counter += 1
+                    if self.exit_counter == self.patience:
+                        self.stats_exit_layer += layer_idx + 1
+                        is_early_exited = True
+                        break
+                else:
+                    self.exit_counter = 0
+                self.last_softmax = softmax_score
+        if not is_early_exited:
+            self.stats_exit_layer += len(self.blocks)
+        if first_RUN:
+            print("head", x.size())
         first_RUN = False
         return x, features, ic_outputs
 
