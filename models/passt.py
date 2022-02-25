@@ -559,6 +559,9 @@ class PaSST(nn.Module):
         self.last_softmax = None
         self.stats_counter += 1
         is_early_exited = False
+        if not self.training and self.is_early_exit_mode and first_RUN:
+            print("In ee inference mode")
+            print("Patience:", self.patience, "Diff threshold", self.diff_threshold)
         for layer_idx, (head, feature) in enumerate(zip(self.heads, features)):
             x = head(feature)
             ic_outputs.append(x)

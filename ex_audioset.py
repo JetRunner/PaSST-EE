@@ -18,6 +18,7 @@ from helpers.models_size import count_non_zero_params
 from helpers.ramp import exp_warmup_linear_down, cosine_cycle
 from helpers.workersinit import worker_init_fn
 from sklearn import metrics
+from utils.checkpoints import get_net_state_dict_from_checkpoint
 
 ex = Experiment("audioset")
 
@@ -62,6 +63,8 @@ def default_conf():
     lr = 0.00002 # learning rate
     use_mixup = True
     mixup_alpha = 0.3
+    diff_threshold=1.
+    patience=12
 
 
 # register extra possible configs
@@ -372,6 +375,14 @@ def evaluate_only(_run, _config, _log, _rnd, _seed):
     train_loader = ex.get_train_dataloaders()
     val_loader = ex.get_val_dataloaders()
     modul = M(ex)
+    load_from = modul.config.trainer.resume_from_checkpoint
+    if load_from is not None:
+        print("Loading checkpoint from", load_from)
+        net = get_net_state_dict_from_checkpoint(load_from)
+        modul.net.load_state_dict(net)
+    modul.net.patience = modul.config.patience
+    modul.net.diff_threshold = modul.config.diff_threshold
+    modul.net.is_early_exit_mode = True
     modul.val_dataloader = None
     trainer.val_dataloaders = None
     print(f"\n\nValidation len={len(val_loader)}\n")
