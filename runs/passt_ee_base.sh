@@ -2,7 +2,7 @@ ngpu=${ngpu:-2}
 cuda_devices=${cuda_devices:-0,1}
 exp_name=${exp_name:-base}
 resume_from=${resume_from:-null}
-save_ckpt_n_epoch${save_ckpt_n_epoch:-5}
+save_ckpt_n_epoch=${save_ckpt_n_epoch:-5}
 
 if [[ $ngpu -eq 1 ]]; then
     python ex_audioset.py \

@@ -3,7 +3,7 @@ cuda_devices=${cuda_devices:-0,1}
 exp_name=${exp_name:-distil}
 resume_from=${resume_from:-null}
 distillation_alpha=${distillation_alpha:-0.9}
-save_ckpt_n_epoch${save_ckpt_n_epoch:-5}
+save_ckpt_n_epoch=${save_ckpt_n_epoch:-5}
 
 if [[ $ngpu -eq 1 ]]; then
     python ex_audioset_oracle_distillation.py \
