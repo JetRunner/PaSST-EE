@@ -63,6 +63,7 @@ def default_conf():
     lr = 0.00002 # learning rate
     use_mixup = True
     mixup_alpha = 0.3
+    save_ckpt_n_epoch = 5
     diff_threshold=1.
     patience=12
 
@@ -187,6 +188,10 @@ class M(Ba3lModule):
         logs = {'train.loss': avg_loss, 'step': self.current_epoch}
 
         self.log_dict(logs, sync_dist=True)
+
+        if self.current_epoch % self.config.save_ckpt_n_epoch == 0:
+            ckpt_path = os.path.join(self.config.trainer.default_root_dir, "ckpts", f"epoch{self.current_epoch}.ckpt")
+            self.trainer.save_checkpoint(ckpt_path)
 
     def predict(self, batch, batch_idx: int, dataloader_idx: int = None):
         x, f, y = batch
