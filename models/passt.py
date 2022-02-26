@@ -367,13 +367,15 @@ class PaSST(nn.Module):
         """
         super().__init__()
 
+        self.stats_exit_layer = 0
+        self.stats_counter = 0
+
         self.diff_threshold = diff_threshold
         self.patience = patience
         self.exit_counter = 0
         self.last_softmax = None
-        self.stats_exit_layer = 0
-        self.stats_counter = 0
         self.is_early_exit_mode = False
+        self.fix_ic_output_layer_num = None  # Specify which layer used to predict
 
         self.num_classes = num_classes
         self.u_patchout = u_patchout
@@ -425,10 +427,14 @@ class PaSST(nn.Module):
 
         self.init_weights(weight_init)
 
+    def reset_stats(self):
+        self.stats_exit_layer = 0
+        self.stats_counter = 0
+
     def get_stats(self):
         return {
             "total_instances": self.stats_counter,
-            "acceleration_ratio": self.stats_exit_layer / self.stats_counter,
+            "average_layers_used": self.stats_exit_layer / self.stats_counter,
         }
 
     def init_weights(self, mode=''):
@@ -583,6 +589,11 @@ class PaSST(nn.Module):
                 else:
                     self.exit_counter = 0
                 self.last_softmax = softmax_score
+            elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
+                self.stats_exit_layer += layer_idx + 1
+                is_early_exited = True
+                break
+
         if not is_early_exited:
             self.stats_exit_layer += len(self.blocks)
         if first_RUN:
