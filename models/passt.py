@@ -367,12 +367,13 @@ class PaSST(nn.Module):
         """
         super().__init__()
 
+        self.stats_exit_layer = 0
+        self.stats_counter = 0
+
         self.diff_threshold = diff_threshold
         self.patience = patience
         self.exit_counter = 0
         self.last_softmax = None
-        self.stats_exit_layer = 0
-        self.stats_counter = 0
         self.is_early_exit_mode = False
 
         self.num_classes = num_classes
@@ -424,6 +425,10 @@ class PaSST(nn.Module):
         #                           nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())
 
         self.init_weights(weight_init)
+
+    def reset_stats(self):
+        self.stats_exit_layer = 0
+        self.stats_counter = 0
 
     def get_stats(self):
         return {
