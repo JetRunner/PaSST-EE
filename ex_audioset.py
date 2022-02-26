@@ -394,6 +394,7 @@ def evaluate_only(_run, _config, _log, _rnd, _seed):
     res = trainer.validate(modul, val_dataloaders=val_loader)
     print("\n\n Validtaion:")
     print(res)
+    print(modul.net.get_stats())
 
 
 @ex.command
