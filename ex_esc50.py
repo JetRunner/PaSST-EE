@@ -132,6 +132,32 @@ class M(Ba3lModule):
             x = (x - self.tr_m) / self.tr_std
         return x
 
+    def default_loss(self, y, y_hat, rn_indices, lam):
+        batch_size = len(y)
+        if self.use_mixup:
+            y_mix = y * lam.reshape(batch_size, 1) + y[rn_indices] * (1. - lam.reshape(batch_size, 1))
+            samples_loss = F.binary_cross_entropy_with_logits(
+                y_hat, y_mix, reduction="none")
+            loss = samples_loss.mean()
+            samples_loss = samples_loss.detach()
+        else:
+            samples_loss = F.binary_cross_entropy_with_logits(y_hat, y, reduction="none")
+            loss = samples_loss.mean()
+            samples_loss = samples_loss.detach()
+        return loss, samples_loss
+
+    def early_exit_loss(self, y, ic_outputs, rn_indices, lam):
+        acc_loss = 0
+        all_samples_loss = []
+        for i, ic_output in enumerate(ic_outputs):
+            ic_loss, ic_samples_loss = self.default_loss(y, ic_output, rn_indices, lam)
+            all_samples_loss.append({
+                "idx": i,
+                "samples_loss": ic_samples_loss
+            }) 
+            acc_loss = acc_loss + ic_loss
+        return acc_loss, all_samples_loss
+
     def training_step(self, batch, batch_idx):
         # REQUIRED
         x, f, y = batch
@@ -149,18 +175,8 @@ class M(Ba3lModule):
 
         y_hat, embed = self.forward(x)
 
-        if self.use_mixup:
-            # y_mix = y * lam.reshape(batch_size, 1) + y[rn_indices] * (1. - lam.reshape(batch_size, 1))
-            samples_loss = (F.cross_entropy(y_hat, y, reduction="none") * lam.reshape(batch_size) +
-                            F.cross_entropy(y_hat, y[rn_indices], reduction="none") * (1. - lam.reshape(batch_size)))
-            loss = samples_loss.mean()
-            loss = samples_loss.mean()
-            samples_loss = samples_loss.detach()
-        else:
-            samples_loss = F.cross_entropy(y_hat, y, reduction="none")
-            loss = samples_loss.mean()
-            samples_loss = samples_loss.detach()
-
+        loss, _ = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
+        
         results = {"loss": loss, }
 
         return results
@@ -193,7 +209,7 @@ class M(Ba3lModule):
         if self.do_swa:
             model_name = model_name + [("swa_", self.net_swa)]
         for net_name, net in model_name:
-            y_hat, _ = net(x)
+            y_hat, _, _ = net(x)
             samples_loss = F.cross_entropy(y_hat, y, reduction="none")
             loss = samples_loss.mean()
             _, preds = torch.max(y_hat, dim=1)
