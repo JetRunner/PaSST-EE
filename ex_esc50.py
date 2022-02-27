@@ -18,6 +18,8 @@ from helpers.models_size import count_non_zero_params
 from helpers.ramp import exp_warmup_linear_down, cosine_cycle
 from helpers.workersinit import worker_init_fn
 from sklearn import metrics
+from utils.checkpoints import get_net_state_dict_from_checkpoint
+
 
 ex = Experiment("esc50")
 
@@ -61,7 +63,9 @@ def default_conf():
     lr = 0.00001
     use_mixup = True
     mixup_alpha = 0.3
-
+    diff_threshold=1.
+    patience=12
+    save_ckpt_n_epoch = 5
 
 # register extra possible configs
 add_configs(ex)
@@ -167,6 +171,9 @@ class M(Ba3lModule):
         logs = {'train.loss': avg_loss, 'step': self.current_epoch}
 
         self.log_dict(logs, sync_dist=True)
+        if self.current_epoch % self.config.save_ckpt_n_epoch == 0:
+            ckpt_path = os.path.join(self.config.trainer.default_root_dir, "ckpts", f"epoch{self.current_epoch}.ckpt")
+            self.trainer.save_checkpoint(ckpt_path)
 
     def predict(self, batch, batch_idx: int, dataloader_idx: int = None):
         x, f, y = batch
@@ -334,12 +341,21 @@ def evaluate_only(_run, _config, _log, _rnd, _seed):
     train_loader = ex.get_train_dataloaders()
     val_loader = ex.get_val_dataloaders()
     modul = M(ex)
+    load_from = modul.config.trainer.resume_from_checkpoint
+    if load_from is not None:
+        print("Loading checkpoint from", load_from)
+        net = get_net_state_dict_from_checkpoint(load_from)
+        modul.net.load_state_dict(net)
+    modul.net.patience = modul.config.patience
+    modul.net.diff_threshold = modul.config.diff_threshold
+    modul.net.is_early_exit_mode = True
     modul.val_dataloader = None
     trainer.val_dataloaders = None
     print(f"\n\nValidation len={len(val_loader)}\n")
     res = trainer.validate(modul, val_dataloaders=val_loader)
     print("\n\n Validtaion:")
     print(res)
+    
 
 
 @ex.command
