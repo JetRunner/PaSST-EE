@@ -18,6 +18,8 @@ from helpers.models_size import count_non_zero_params
 from helpers.ramp import exp_warmup_linear_down, cosine_cycle
 from helpers.workersinit import worker_init_fn
 from sklearn import metrics
+from utils.checkpoints import get_net_state_dict_from_checkpoint
+
 
 ex = Experiment("esc50")
 
@@ -61,7 +63,9 @@ def default_conf():
     lr = 0.00001
     use_mixup = True
     mixup_alpha = 0.3
-
+    diff_threshold=1.
+    patience=12
+    save_ckpt_n_epoch = 5
 
 # register extra possible configs
 add_configs(ex)
@@ -128,6 +132,32 @@ class M(Ba3lModule):
             x = (x - self.tr_m) / self.tr_std
         return x
 
+    def default_loss(self, y, y_hat, rn_indices, lam):
+        batch_size = len(y)
+        if self.use_mixup:
+            y_mix = y * lam.reshape(batch_size, 1) + y[rn_indices] * (1. - lam.reshape(batch_size, 1))
+            samples_loss = F.binary_cross_entropy_with_logits(
+                y_hat, y_mix, reduction="none")
+            loss = samples_loss.mean()
+            samples_loss = samples_loss.detach()
+        else:
+            samples_loss = F.binary_cross_entropy_with_logits(y_hat, y, reduction="none")
+            loss = samples_loss.mean()
+            samples_loss = samples_loss.detach()
+        return loss, samples_loss
+
+    def early_exit_loss(self, y, ic_outputs, rn_indices, lam):
+        acc_loss = 0
+        all_samples_loss = []
+        for i, ic_output in enumerate(ic_outputs):
+            ic_loss, ic_samples_loss = self.default_loss(y, ic_output, rn_indices, lam)
+            all_samples_loss.append({
+                "idx": i,
+                "samples_loss": ic_samples_loss
+            }) 
+            acc_loss = acc_loss + ic_loss
+        return acc_loss, all_samples_loss
+
     def training_step(self, batch, batch_idx):
         # REQUIRED
         x, f, y = batch
@@ -145,18 +175,8 @@ class M(Ba3lModule):
 
         y_hat, embed = self.forward(x)
 
-        if self.use_mixup:
-            # y_mix = y * lam.reshape(batch_size, 1) + y[rn_indices] * (1. - lam.reshape(batch_size, 1))
-            samples_loss = (F.cross_entropy(y_hat, y, reduction="none") * lam.reshape(batch_size) +
-                            F.cross_entropy(y_hat, y[rn_indices], reduction="none") * (1. - lam.reshape(batch_size)))
-            loss = samples_loss.mean()
-            loss = samples_loss.mean()
-            samples_loss = samples_loss.detach()
-        else:
-            samples_loss = F.cross_entropy(y_hat, y, reduction="none")
-            loss = samples_loss.mean()
-            samples_loss = samples_loss.detach()
-
+        loss, _ = self.early_exit_loss(y, ic_outputs, rn_indices, lam)
+        
         results = {"loss": loss, }
 
         return results
@@ -167,6 +187,9 @@ class M(Ba3lModule):
         logs = {'train.loss': avg_loss, 'step': self.current_epoch}
 
         self.log_dict(logs, sync_dist=True)
+        if self.current_epoch % self.config.save_ckpt_n_epoch == 0:
+            ckpt_path = os.path.join(self.config.trainer.default_root_dir, "ckpts", f"epoch{self.current_epoch}.ckpt")
+            self.trainer.save_checkpoint(ckpt_path)
 
     def predict(self, batch, batch_idx: int, dataloader_idx: int = None):
         x, f, y = batch
@@ -186,7 +209,7 @@ class M(Ba3lModule):
         if self.do_swa:
             model_name = model_name + [("swa_", self.net_swa)]
         for net_name, net in model_name:
-            y_hat, _ = net(x)
+            y_hat, _, _ = net(x)
             samples_loss = F.cross_entropy(y_hat, y, reduction="none")
             loss = samples_loss.mean()
             _, preds = torch.max(y_hat, dim=1)
@@ -334,12 +357,21 @@ def evaluate_only(_run, _config, _log, _rnd, _seed):
     train_loader = ex.get_train_dataloaders()
     val_loader = ex.get_val_dataloaders()
     modul = M(ex)
+    load_from = modul.config.trainer.resume_from_checkpoint
+    if load_from is not None:
+        print("Loading checkpoint from", load_from)
+        net = get_net_state_dict_from_checkpoint(load_from)
+        modul.net.load_state_dict(net)
+    modul.net.patience = modul.config.patience
+    modul.net.diff_threshold = modul.config.diff_threshold
+    modul.net.is_early_exit_mode = True
     modul.val_dataloader = None
     trainer.val_dataloaders = None
     print(f"\n\nValidation len={len(val_loader)}\n")
     res = trainer.validate(modul, val_dataloaders=val_loader)
     print("\n\n Validtaion:")
     print(res)
+    
 
 
 @ex.command
