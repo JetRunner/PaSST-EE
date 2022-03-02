@@ -588,7 +588,8 @@ class PaSST(nn.Module):
                         break
                 else:
                     self.exit_counter = 0
-                self.last_feature = feature
+                self.last_feature = self.last_feature * self.exit_counter + feature
+                self.last_feature /= self.exit_counter + 1
             elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
                 self.stats_exit_layer += layer_idx + 1
                 is_early_exited = True
