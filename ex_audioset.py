@@ -67,6 +67,7 @@ def default_conf():
     diff_threshold = 1.
     diff_opt = "sum"
     patience = 12
+    temperature = 1
     fix_ic_output_layer_num = None
 
 
@@ -390,6 +391,7 @@ def evaluate_only(_run, _config, _log, _rnd, _seed):
     modul.net.patience = modul.config.patience
     modul.net.diff_threshold = modul.config.diff_threshold
     modul.net.diff_opt = modul.config.diff_opt
+    modul.net.temperature = modul.config.temperature
     modul.net.is_early_exit_mode = True
     modul.val_dataloader = None
     trainer.val_dataloaders = None
