@@ -1,16 +1,23 @@
 cuda_devices=${cuda_devices:-0}
 resume_from=${resume_from:-null}
 diff_opt=${diff_opt:-sum}
-exp_name=${exp_name:-base}
+exp_name=${exp_name:-base_2} # 缩小范围搜索
 exp_name=${exp_name}_${diff_opt}
 
 rm -r output/eval/PaSST-EE-${exp_name}
 mkdir -p output/eval/PaSST-EE-${exp_name}/res
 echo Eval $resume_from >> output/eval/PaSST-EE-${exp_name}/res.txt
 
-for patience in {2..6}
+# default: 2-6, 0.2-1
+# 1: 4, 0.65 0.7 0.75
+# 2: 2-6, 1.05 1.1 1.15 1.2 1.5
+
+for patience in {4..6}
+# for patience in 4
 do 
-    for diff_threshold in 0.05 0.1 0.2 0.3 0.4 0.5
+    # for diff_threshold in 0.2 0.4 0.6 0.8 1.0
+    # for diff_threshold in 0.65 0.7 0.75
+    for diff_threshold in 1.05 1.1 1.15 1.2 1.5
     do
         echo [patience $patience, diff_threshold, $diff_threshold] >> output/eval/PaSST-EE-${exp_name}/res.txt
         CUDA_VISIBLE_DEVICES=${cuda_devices} python ex_audioset.py evaluate_only \
