@@ -373,7 +373,7 @@ class PaSST(nn.Module):
         self.diff_threshold = diff_threshold
         self.patience = patience
         self.exit_counter = 0
-        self.last_softmax = None
+        self.last_feature = None
         self.is_early_exit_mode = False
         self.fix_ic_output_layer_num = None  # Specify which layer used to predict
 
@@ -562,7 +562,7 @@ class PaSST(nn.Module):
         #     if first_RUN: print("forward_features", features.size())
         #     x = self.head(x)
 
-        self.last_softmax = None
+        self.last_feature = None
         self.stats_counter += 1
         is_early_exited = False
         if not self.training and self.is_early_exit_mode and first_RUN:
@@ -572,15 +572,12 @@ class PaSST(nn.Module):
             x = head(feature)
             ic_outputs.append(x)
             if not self.training and self.is_early_exit_mode:  # When inference with early exit
-                softmax_score = F.softmax(feature, dim=-1)
-                if self.last_softmax is None:
+                if self.last_feature is None:
                     assert x.shape[0] == 1, "The batch size has to be 1 for early exit."  # Only check once
-                    self.last_softmax = softmax_score
+                    self.last_feature = feature
                     continue
-                diff: torch.FloatTensor = softmax_score - self.last_softmax
-                diff_abs = diff.flatten().abs()
-                diff_abs_sum = diff_abs.sum()
-                if diff_abs_sum < self.diff_threshold:  # Consistent
+                diff = F.kl_div(F.log_softmax(feature, dim=1), F.softmax(self.last_feature, dim=1), reduction='batchmean')
+                if diff < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
                         self.stats_exit_layer += layer_idx + 1
@@ -588,7 +585,7 @@ class PaSST(nn.Module):
                         break
                 else:
                     self.exit_counter = 0
-                self.last_softmax = softmax_score
+                self.last_feature = feature
             elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
                 self.stats_exit_layer += layer_idx + 1
                 is_early_exited = True
