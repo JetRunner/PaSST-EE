@@ -341,7 +341,7 @@ class PaSST(nn.Module):
                  in_chans=1, num_classes=527, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
-                 act_layer=None, weight_init='', diff_threshold=1., patience=12):
+                 act_layer=None, weight_init='', diff_threshold=1., patience=12, temperature=1):
         """
         Args:
             u_patchout: Unstructured Patchout integer, number of items to be removed from the final sequence
@@ -372,6 +372,7 @@ class PaSST(nn.Module):
 
         self.diff_threshold = diff_threshold
         self.patience = patience
+        self.temperature = temperature
         self.exit_counter = 0
         self.last_feature = None
         self.is_early_exit_mode = False
@@ -576,7 +577,8 @@ class PaSST(nn.Module):
                     assert x.shape[0] == 1, "The batch size has to be 1 for early exit."  # Only check once
                     self.last_feature = feature
                     continue
-                diff = F.kl_div(F.log_softmax(feature, dim=1), F.softmax(self.last_feature, dim=1), reduction='batchmean')
+                diff = F.kl_div(F.log_softmax(feature / self.temperature, dim=1), F.softmax(self.last_feature / self.temperature, dim=1), reduction='batchmean')
+                diff *= self.temperature ** 2
                 if diff < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
