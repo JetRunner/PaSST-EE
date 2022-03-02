@@ -1,8 +1,6 @@
 cuda_devices=${cuda_devices:-0}
+exp_name=${exp_name:-kl}
 resume_from=${resume_from:-null}
-diff_opt=${diff_opt:-sum}
-exp_name=${exp_name:-base}
-exp_name=${exp_name}_${diff_opt}
 
 rm -r output/eval/PaSST-EE-${exp_name}
 mkdir -p output/eval/PaSST-EE-${exp_name}/res
@@ -10,7 +8,7 @@ echo Eval $resume_from >> output/eval/PaSST-EE-${exp_name}/res.txt
 
 for patience in {2..6}
 do 
-    for diff_threshold in 0.05 0.1 0.2 0.3 0.4 0.5
+    for diff_threshold in 0.2 0.4 0.6 0.8 1.
     do
         echo [patience $patience, diff_threshold, $diff_threshold] >> output/eval/PaSST-EE-${exp_name}/res.txt
         CUDA_VISIBLE_DEVICES=${cuda_devices} python ex_audioset.py evaluate_only \
@@ -19,7 +17,6 @@ do
                 datasets.test.batch_size=1 \
                 patience=${patience} \
                 diff_threshold=${diff_threshold} \
-                diff_opt=${diff_opt} \
                 models.net.arch=passt_deit_bd_p16_384 \
                 -p -F "output/eval/PaSST-EE-${exp_name}/logs" > output/eval/PaSST-EE-${exp_name}/res/p${patience}_t${diff_threshold}
         tail -n 3 output/eval/PaSST-EE-${exp_name}/res/p${patience}_t${diff_threshold} >> output/eval/PaSST-EE-${exp_name}/res.txt

@@ -64,8 +64,10 @@ def default_conf():
     use_mixup = True
     mixup_alpha = 0.3
     save_ckpt_n_epoch = 5
-    diff_threshold=1.
-    patience=12
+    diff_threshold = 1.
+    diff_opt = "sum"
+    patience = 12
+    fix_ic_output_layer_num = None
 
 
 # register extra possible configs
@@ -387,6 +389,7 @@ def evaluate_only(_run, _config, _log, _rnd, _seed):
         modul.net.load_state_dict(net)
     modul.net.patience = modul.config.patience
     modul.net.diff_threshold = modul.config.diff_threshold
+    modul.net.diff_opt = modul.config.diff_opt
     modul.net.is_early_exit_mode = True
     modul.val_dataloader = None
     trainer.val_dataloaders = None
@@ -394,6 +397,28 @@ def evaluate_only(_run, _config, _log, _rnd, _seed):
     res = trainer.validate(modul, val_dataloaders=val_loader)
     print("\n\n Validtaion:")
     print(res)
+    print(modul.net.get_stats())
+
+@ex.command
+def evaluate_fix_layer(_run, _config, _log, _rnd, _seed):
+    # force overriding the config, not logged = not recommended
+    trainer = ex.get_trainer()
+    train_loader = ex.get_train_dataloaders()
+    val_loader = ex.get_val_dataloaders()
+    modul = M(ex)
+    load_from = modul.config.trainer.resume_from_checkpoint
+    if load_from is not None:
+        print("Loading checkpoint from", load_from)
+        net = get_net_state_dict_from_checkpoint(load_from)
+        modul.net.load_state_dict(net)
+    modul.net.fix_ic_output_layer_num = modul.config.fix_ic_output_layer_num
+    modul.val_dataloader = None
+    trainer.val_dataloaders = None
+    print(f"\n\nValidation len={len(val_loader)}\n")
+    res = trainer.validate(modul, val_dataloaders=val_loader)
+    print("\n\n Validtaion:")
+    print(res)
+    print(modul.net.get_stats())
 
 
 @ex.command

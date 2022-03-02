@@ -341,7 +341,7 @@ class PaSST(nn.Module):
                  in_chans=1, num_classes=527, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
-                 act_layer=None, weight_init='', diff_threshold=1., patience=12):
+                 act_layer=None, weight_init='', diff_threshold=1., patience=12, diff_opt="sum"):
         """
         Args:
             u_patchout: Unstructured Patchout integer, number of items to be removed from the final sequence
@@ -371,6 +371,7 @@ class PaSST(nn.Module):
         self.stats_counter = 0
 
         self.diff_threshold = diff_threshold
+        self.diff_opt = diff_opt
         self.patience = patience
         self.exit_counter = 0
         self.last_feature = None
@@ -565,9 +566,10 @@ class PaSST(nn.Module):
         self.last_feature = None
         self.stats_counter += 1
         is_early_exited = False
+        self.exit_counter = 0
         if not self.training and self.is_early_exit_mode and first_RUN:
             print("In ee inference mode")
-            print("Patience:", self.patience, "Diff threshold", self.diff_threshold)
+            print("Patience:", self.patience, "Diff threshold", self.diff_threshold, "Diff opt", self.diff_opt)
         for layer_idx, (head, feature) in enumerate(zip(self.heads, features)):
             x = head(feature)
             ic_outputs.append(x)
@@ -589,6 +591,8 @@ class PaSST(nn.Module):
             elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
                 self.stats_exit_layer += layer_idx + 1
                 is_early_exited = True
+                if first_RUN:
+                    print("fix_layer", self.fix_ic_output_layer_num)
                 break
 
         if not is_early_exited:
