@@ -341,7 +341,7 @@ class PaSST(nn.Module):
                  in_chans=1, num_classes=527, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
-                 act_layer=None, weight_init='', diff_threshold=1., patience=12):
+                 act_layer=None, weight_init='', diff_threshold=1., patience=12, diff_opt="sum"):
         """
         Args:
             u_patchout: Unstructured Patchout integer, number of items to be removed from the final sequence
@@ -367,13 +367,16 @@ class PaSST(nn.Module):
         """
         super().__init__()
 
+        self.stats_exit_layer = 0
+        self.stats_counter = 0
+
         self.diff_threshold = diff_threshold
+        self.diff_opt = diff_opt
         self.patience = patience
         self.exit_counter = 0
         self.last_softmax = None
-        self.stats_exit_layer = 0
-        self.stats_counter = 0
         self.is_early_exit_mode = False
+        self.fix_ic_output_layer_num = None  # Specify which layer used to predict
 
         self.num_classes = num_classes
         self.u_patchout = u_patchout
@@ -426,10 +429,14 @@ class PaSST(nn.Module):
 
         self.init_weights(weight_init)
 
+    def reset_stats(self):
+        self.stats_exit_layer = 0
+        self.stats_counter = 0
+
     def get_stats(self):
         return {
             "total_instances": self.stats_counter,
-            "acceleration_ratio": self.stats_exit_layer / self.stats_counter,
+            "average_layers_used": self.stats_exit_layer / self.stats_counter,
         }
 
     def init_weights(self, mode=''):
@@ -548,9 +555,10 @@ class PaSST(nn.Module):
         self.last_softmax = None
         self.stats_counter += 1
         is_early_exited = False
+        self.exit_counter = 0
         if not self.training and self.is_early_exit_mode and first_RUN:
             print("In ee inference mode")
-            print("Patience:", self.patience, "Diff threshold", self.diff_threshold)
+            print("Patience:", self.patience, "Diff threshold", self.diff_threshold, "Diff opt", self.diff_opt)
         for layer_idx, (head, feature) in enumerate(zip(self.heads, features)):
             x = head(feature)
             ic_outputs.append(x)
@@ -562,8 +570,16 @@ class PaSST(nn.Module):
                     continue
                 diff: torch.FloatTensor = softmax_score - self.last_softmax
                 diff_abs = diff.flatten().abs()
-                diff_abs_sum = diff_abs.sum()
-                if diff_abs_sum < self.diff_threshold:  # Consistent
+
+                if self.diff_opt == "sum":
+                    diff_abs_v = diff_abs.sum()
+                elif self.diff_opt == "mean":
+                    diff_abs_v = diff_abs.mean()
+                elif self.diff_opt == "max":
+                    diff_abs_v = diff_abs.max()
+                
+                # print(diff_abs_v)
+                if diff_abs_v < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
                         self.stats_exit_layer += layer_idx + 1
@@ -572,6 +588,15 @@ class PaSST(nn.Module):
                 else:
                     self.exit_counter = 0
                 self.last_softmax = softmax_score
+                # import pdb
+                # pdb.set_trace()
+            elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
+                self.stats_exit_layer += layer_idx + 1
+                is_early_exited = True
+                if first_RUN:
+                    print("fix_layer", self.fix_ic_output_layer_num)
+                break
+
         if not is_early_exited:
             self.stats_exit_layer += len(self.blocks)
         if first_RUN:
