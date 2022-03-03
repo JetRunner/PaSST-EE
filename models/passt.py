@@ -381,6 +381,7 @@ class PaSST(nn.Module):
         self.s_patchout_f = s_patchout_f
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.num_tokens = 2 if distilled else 1
+        self.depth = depth
         norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
         act_layer = act_layer or nn.GELU
 
@@ -463,7 +464,7 @@ class PaSST(nn.Module):
 
     def reset_classifier(self, num_classes, global_pool=''):
         self.num_classes = num_classes
-        self.heads = nn.ModuleList([nn.Sequential(nn.LayerNorm(self.num_features), nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())] for _ in range(depth))
+        self.heads = nn.ModuleList([nn.Sequential(nn.LayerNorm(self.num_features), nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity())] for _ in range(self.depth))
         # self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
         # if self.num_tokens == 2:
         #     self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
@@ -543,18 +544,6 @@ class PaSST(nn.Module):
 
         _, features = self.forward_features(x)
         ic_outputs = []
-
-        # if self.head_dist is not None:
-        #     features = (x[0] + x[1]) / 2
-        #     if first_RUN: print("forward_features", features.size())
-        #     x = self.head(features)
-        #     if first_RUN: print("head", x.size())
-        #     first_RUN = False
-        #     return x, features
-        # else:
-        #     features = x
-        #     if first_RUN: print("forward_features", features.size())
-        #     x = self.head(x)
 
         self.last_softmax = None
         self.stats_counter += 1
