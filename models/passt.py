@@ -374,7 +374,7 @@ class PaSST(nn.Module):
         self.diff_opt = diff_opt
         self.patience = patience
         self.exit_counter = 0
-        self.last_softmax = None
+        self.last_probs = None
         self.is_early_exit_mode = False
         self.fix_ic_output_layer_num = None  # Specify which layer used to predict
 
@@ -552,7 +552,8 @@ class PaSST(nn.Module):
         _, features = self.forward_features(x)
         ic_outputs = []
 
-        self.last_softmax = None
+        self.last_probs = None
+        self.last_x = None
         self.stats_counter += 1
         is_early_exited = False
         self.exit_counter = 0
@@ -563,23 +564,34 @@ class PaSST(nn.Module):
             x = head(feature)
             ic_outputs.append(x)
             if not self.training and self.is_early_exit_mode:  # When inference with early exit
-                softmax_score = F.softmax(feature, dim=-1)
-                if self.last_softmax is None:
+                if "softmax" in self.diff_opt: # softmax_sum, softmax_max, softmax_mean
+                    cur_probs = F.softmax(x, dim=-1)
+                elif "sigmoid" in self.diff_opt: # sigmoid_sum, sigmoid_max, sigmoid_mean
+                    cur_probs = F.sigmoid(x)
+                if self.last_probs is None:
                     assert x.shape[0] == 1, "The batch size has to be 1 for early exit."  # Only check once
-                    self.last_softmax = softmax_score
+                    if "kl" in self.diff_opt:
+                        self.last_probs = x
+                    else:
+                        self.last_probs = cur_probs
                     continue
-                diff: torch.FloatTensor = softmax_score - self.last_softmax
-                diff_abs = diff.flatten().abs()
-
-                if self.diff_opt == "sum":
-                    diff_abs_v = diff_abs.sum()
-                elif self.diff_opt == "mean":
-                    diff_abs_v = diff_abs.mean()
-                elif self.diff_opt == "max":
-                    diff_abs_v = diff_abs.max()
                 
-                # print(diff_abs_v)
-                if diff_abs_v < self.diff_threshold:  # Consistent
+                if "kl" in self.diff_opt:
+                    if "softmax" in self.diff_opt:  # kl_softmax
+                        diff = F.kl_div(F.log_softmax(x / self.temperature, dim=1), F.softmax(self.last_probs / self.temperature, dim=1), reduction='batchmean')
+                    else: # kl_sigmoid
+                        diff = F.kl_div(F.logsigmoid(x / self.temperature), F.sigmoid(self.last_probs / self.temperature), reduction='batchmean')
+                else:
+                    diff: torch.FloatTensor = cur_probs - self.last_probs
+                    diff = diff.flatten().abs()
+                    if "sum" in self.diff_opt:
+                        diff = diff.sum()
+                    elif "mean" in self.diff_opt:
+                        diff = diff.mean()
+                    elif "max" in self.diff_opt:
+                        diff = diff.max()
+                # print(layer_idx, diff)
+                if diff < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
                         self.stats_exit_layer += layer_idx + 1
@@ -587,9 +599,11 @@ class PaSST(nn.Module):
                         break
                 else:
                     self.exit_counter = 0
-                self.last_softmax = softmax_score
-                # import pdb
-                # pdb.set_trace()
+
+                if "kl" in self.diff_opt:
+                    self.last_probs = x
+                else:
+                    self.last_probs = cur_probs
             elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
                 self.stats_exit_layer += layer_idx + 1
                 is_early_exited = True
