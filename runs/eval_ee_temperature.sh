@@ -1,5 +1,5 @@
 cuda_devices=${cuda_devices:-0}
-exp_name=${exp_name:-temperature}
+exp_name=${exp_name:-temperature-mean}
 resume_from=${resume_from:-null}
 
 rm -r output/eval/PaSST-EE-${exp_name}

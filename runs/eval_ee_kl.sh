@@ -1,5 +1,5 @@
 cuda_devices=${cuda_devices:-0}
-exp_name=${exp_name:-kl}
+exp_name=${exp_name:-kl-softmax}
 resume_from=${resume_from:-null}
 
 rm -r output/eval/PaSST-EE-${exp_name}
@@ -8,7 +8,8 @@ echo Eval $resume_from >> output/eval/PaSST-EE-${exp_name}/res.txt
 
 for patience in {2..6}
 do 
-    for diff_threshold in 0.2 0.4 0.6 0.8 1.
+    for diff_threshold in 1. 0.8 0.6 0.4 0.2
+    # for diff_threshold in 0.01 0.02 0.03 0.04 0.05
     do
         echo [patience $patience, diff_threshold, $diff_threshold] >> output/eval/PaSST-EE-${exp_name}/res.txt
         CUDA_VISIBLE_DEVICES=${cuda_devices} python ex_audioset.py evaluate_only \

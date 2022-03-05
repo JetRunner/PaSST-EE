@@ -576,10 +576,12 @@ class PaSST(nn.Module):
             if not self.training and self.is_early_exit_mode:  # When inference with early exit
                 if self.last_feature is None:
                     assert x.shape[0] == 1, "The batch size has to be 1 for early exit."  # Only check once
-                    self.last_feature = feature
+                    self.last_feature = x
                     continue
-                diff = F.kl_div(F.log_softmax(feature / self.temperature, dim=1), F.softmax(self.last_feature / self.temperature, dim=1), reduction='batchmean')
+                # diff = F.kl_div(F.logsigmoid(feature / self.temperature), F.sigmoid(self.last_feature / self.temperature), reduction='batchmean')
+                diff = F.kl_div(F.log_softmax(x / self.temperature, dim=1), F.softmax(self.last_feature / self.temperature, dim=1), reduction='batchmean')
                 diff *= self.temperature ** 2
+                # diff /= x.shape[1]
                 if diff < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
@@ -588,15 +590,15 @@ class PaSST(nn.Module):
                         break
                 else:
                     self.exit_counter = 0
-                self.last_feature = self.last_feature * self.exit_counter + feature
-                self.last_feature /= self.exit_counter + 1
+                self.last_feature = x
+                # self.last_feature = self.last_feature * self.exit_counter + x
+                # self.last_feature /= self.exit_counter + 1
             elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
                 self.stats_exit_layer += layer_idx + 1
                 is_early_exited = True
                 if first_RUN:
                     print("fix_layer", self.fix_ic_output_layer_num)
                 break
-
         if not is_early_exited:
             self.stats_exit_layer += len(self.blocks)
         if first_RUN:
