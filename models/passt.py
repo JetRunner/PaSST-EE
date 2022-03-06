@@ -570,27 +570,13 @@ class PaSST(nn.Module):
                     cur_probs = F.sigmoid(x)
                 if self.last_probs is None:
                     assert x.shape[0] == 1, "The batch size has to be 1 for early exit."  # Only check once
-                    if "kl" in self.diff_opt:
-                        self.last_probs = x
-                    else:
-                        self.last_probs = cur_probs
+                    self.last_probs = cur_probs
                     continue
                 
-                if "kl" in self.diff_opt:
-                    if "softmax" in self.diff_opt:  # kl_softmax
-                        diff = F.kl_div(F.log_softmax(x / self.temperature, dim=1), F.softmax(self.last_probs / self.temperature, dim=1), reduction='batchmean')
-                    else: # kl_sigmoid
-                        diff = F.kl_div(F.logsigmoid(x / self.temperature), F.sigmoid(self.last_probs / self.temperature), reduction='batchmean')
-                else:
-                    diff: torch.FloatTensor = cur_probs - self.last_probs
-                    diff = diff.flatten().abs()
-                    if "sum" in self.diff_opt:
-                        diff = diff.sum()
-                    elif "mean" in self.diff_opt:
-                        diff = diff.mean()
-                    elif "max" in self.diff_opt:
-                        diff = diff.max()
-                if diff < self.diff_threshold:  # Consistent
+                weight = cur_probs[0] > self.diff_threshold
+                last_weight = self.last_probs[0] > self.diff_threshold
+                # print(layer_idx, weight.nonzero(), weight.equal(last_weight))
+                if weight.equal(last_weight) and weight.sum() >= 1:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
                         self.stats_exit_layer += layer_idx + 1
@@ -598,18 +584,15 @@ class PaSST(nn.Module):
                         break
                 else:
                     self.exit_counter = 0
+                self.last_probs = cur_probs
 
-                if "kl" in self.diff_opt:
-                    self.last_probs = x
-                else:
-                    self.last_probs = cur_probs
             elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
                 self.stats_exit_layer += layer_idx + 1
                 is_early_exited = True
                 if first_RUN:
                     print("fix_layer", self.fix_ic_output_layer_num)
                 break
-
+        # input()
         if not is_early_exited:
             self.stats_exit_layer += len(self.blocks)
         if first_RUN:
