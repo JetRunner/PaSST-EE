@@ -579,13 +579,16 @@ class PaSST(nn.Module):
                     self.last_x = x
                     continue
 
-                filtered_x = (x >= self.ignore_thres) * x
+                softmax_x = torch.softmax(x, dim=1)
+                softmax_last_x = torch.softmax(self.last_x, dim=1)
+
+                filtered_x = (softmax_x >= self.ignore_thres) * softmax_x
                 filtered_x /= filtered_x.sum(dim=-1)
 
-                filtered_last_x = (self.last_x >= self.ignore_thres) * self.last_x
+                filtered_last_x = (softmax_last_x >= self.ignore_thres) * softmax_last_x
                 filtered_last_x /= filtered_last_x.sum(dim=-1)
 
-                diff = F.kl_div(F.log_softmax(filtered_x, dim=1), F.softmax(filtered_last_x, dim=1), reduction='batchmean')
+                diff = F.kl_div(torch.log(filtered_x), filtered_last_x, reduction='batchmean')
 
                 if diff < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
