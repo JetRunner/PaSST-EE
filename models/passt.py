@@ -341,7 +341,7 @@ class PaSST(nn.Module):
                  in_chans=1, num_classes=527, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
-                 act_layer=None, weight_init='', diff_threshold=1., patience=12, temperature=1):
+                 act_layer=None, weight_init='', diff_threshold=1., patience=12, ignore_thres=0):
         """
         Args:
             u_patchout: Unstructured Patchout integer, number of items to be removed from the final sequence
@@ -372,9 +372,9 @@ class PaSST(nn.Module):
 
         self.diff_threshold = diff_threshold
         self.patience = patience
-        self.temperature = temperature
+        self.ignore_thres = ignore_thres
         self.exit_counter = 0
-        self.last_feature = None
+        self.last_x = None
         self.is_early_exit_mode = False
         self.fix_ic_output_layer_num = None  # Specify which layer used to predict
 
@@ -563,25 +563,30 @@ class PaSST(nn.Module):
         #     if first_RUN: print("forward_features", features.size())
         #     x = self.head(x)
 
-        self.last_feature = None
+        self.last_x = None
         self.stats_counter += 1
         is_early_exited = False
         self.exit_counter = 0
         if not self.training and self.is_early_exit_mode and first_RUN:
             print("In ee inference mode")
-            print("Patience:", self.patience, "Diff threshold:", self.diff_threshold, "Temperature:", self.temperature)
+            print("Patience:", self.patience, "Diff threshold:", self.diff_threshold, "ignore_thres:", self.ignore_thres)
         for layer_idx, (head, feature) in enumerate(zip(self.heads, features)):
             x = head(feature)
             ic_outputs.append(x)
             if not self.training and self.is_early_exit_mode:  # When inference with early exit
-                if self.last_feature is None:
+                if self.last_x is None:
                     assert x.shape[0] == 1, "The batch size has to be 1 for early exit."  # Only check once
-                    self.last_feature = x
+                    self.last_x = x
                     continue
-                # diff = F.kl_div(F.logsigmoid(feature / self.temperature), F.sigmoid(self.last_feature / self.temperature), reduction='batchmean')
-                diff = F.kl_div(F.log_softmax(x / self.temperature, dim=1), F.softmax(self.last_feature / self.temperature, dim=1), reduction='batchmean')
-                diff *= self.temperature ** 2
-                # diff /= x.shape[1]
+
+                filtered_x = (x >= self.ignore_thres) * x
+                filtered_x /= filtered_x.sum(dim=-1)
+
+                filtered_last_x = (self.last_x >= self.ignore_thres) * self.last_x
+                filtered_last_x /= filtered_last_x.sum(dim=-1)
+
+                diff = F.kl_div(F.log_softmax(filtered_x, dim=1), F.softmax(filtered_last_x, dim=1), reduction='batchmean')
+
                 if diff < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
@@ -590,7 +595,7 @@ class PaSST(nn.Module):
                         break
                 else:
                     self.exit_counter = 0
-                self.last_feature = x
+                self.last_x = x
                 # self.last_feature = self.last_feature * self.exit_counter + x
                 # self.last_feature /= self.exit_counter + 1
             elif self.fix_ic_output_layer_num is not None and layer_idx + 1 == self.fix_ic_output_layer_num:
