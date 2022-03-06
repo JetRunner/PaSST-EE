@@ -590,7 +590,6 @@ class PaSST(nn.Module):
                         diff = diff.mean()
                     elif "max" in self.diff_opt:
                         diff = diff.max()
-                # print(layer_idx, diff)
                 if diff < self.diff_threshold:  # Consistent
                     self.exit_counter += 1
                     if self.exit_counter == self.patience:
